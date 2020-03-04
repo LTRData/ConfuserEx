@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Confuser.Core;
 using Confuser.Renamer.Analyzers;
 using dnlib.DotNet;
+using System.Linq;
 
 namespace Confuser.Renamer {
 	internal class AnalyzePhase : ProtectionPhase {
@@ -145,29 +146,43 @@ namespace Confuser.Renamer {
 				return type.IsVisibleOutside(false) && !renPublic.Value;
 		}
 
-		void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, TypeDef type) {
-			if (IsVisibleOutside(context, parameters, type)) {
-				service.SetCanRename(type, false);
-			}
-			else if (type.IsRuntimeSpecialName || type.IsGlobalModuleType) {
-				service.SetCanRename(type, false);
-			}
-			else if (type.FullName == "ConfusedByAttribute") {
-				// Courtesy
-				service.SetCanRename(type, false);
-			}
+        void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, TypeDef type)
+        {
+            if (IsVisibleOutside(context, parameters, type))
+            {
+                service.SetCanRename(type, false);
+            }
+            else if (type.IsRuntimeSpecialName || type.IsGlobalModuleType)
+            {
+                service.SetCanRename(type, false);
+            }
+            else if (type.FullName == "ConfusedByAttribute")
+            {
+                // Courtesy
+                service.SetCanRename(type, false);
+            }
+            else if (type.IsSerializable)
+            {
+                service.SetCanRename(type, false);
+            }
+            else if (type.HasAttribute("System.Runtime.Serialization.DataContractAttribute"))
+            {
+                service.SetCanRename(type, false);
+            }
 
-			if (parameters.GetParameter(context, type, "forceRen", false))
-				return;
+            if (parameters.GetParameter(context, type, "forceRen", false))
+                return;
 
-			if (type.InheritsFromCorlib("System.Attribute")) {
-				service.ReduceRenameMode(type, RenameMode.ASCII);
-			}
+            if (type.InheritsFromCorlib("System.Attribute"))
+            {
+                service.ReduceRenameMode(type, RenameMode.ASCII);
+            }
 
-			if (type.InheritsFrom("System.Configuration.SettingsBase")) {
-				service.SetCanRename(type, false);
-			}
-		}
+            if (type.InheritsFrom("System.Configuration.SettingsBase"))
+            {
+                service.SetCanRename(type, false);
+            }
+        }
 
 		void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, MethodDef method) {
 			if (IsVisibleOutside(context, parameters, method.DeclaringType) &&
@@ -178,10 +193,10 @@ namespace Confuser.Renamer {
 			else if (method.IsRuntimeSpecialName)
 				service.SetCanRename(method, false);
 
-			else if (parameters.GetParameter(context, method, "forceRen", false))
+            else if (parameters.GetParameter(context, method, "forceRen", false))
 				return;
 
-			else if (method.DeclaringType.IsComImport() && !method.HasAttribute("System.Runtime.InteropServices.DispIdAttribute"))
+            else if (method.DeclaringType.IsComImport() && !method.HasAttribute("System.Runtime.InteropServices.DispIdAttribute"))
 				service.SetCanRename(method, false);
 
 			else if (method.DeclaringType.IsDelegate())
@@ -197,7 +212,10 @@ namespace Confuser.Renamer {
 			else if (field.IsRuntimeSpecialName)
 				service.SetCanRename(field, false);
 
-			else if (parameters.GetParameter(context, field, "forceRen", false))
+            else if (field.DeclaringType.IsSerializable)
+                service.SetCanRename(field, false);
+
+            else if (parameters.GetParameter(context, field, "forceRen", false))
 				return;
 
 			else if (field.DeclaringType.IsSerializable && !field.IsNotSerialized)
@@ -216,7 +234,13 @@ namespace Confuser.Renamer {
 			else if (property.IsRuntimeSpecialName)
 				service.SetCanRename(property, false);
 
-			else if (parameters.GetParameter(context, property, "forceRen", false))
+            else if (property.DeclaringType.IsSerializable)
+                service.SetCanRename(property, false);
+
+            else if (property.DeclaringType.HasAttribute("System.Runtime.Serialization.DataContractAttribute"))
+                service.SetCanRename(property, false);
+
+            else if (parameters.GetParameter(context, property, "forceRen", false))
 				return;
 
 			else if (property.DeclaringType.Implements("System.ComponentModel.INotifyPropertyChanged"))
@@ -233,6 +257,10 @@ namespace Confuser.Renamer {
 
 			else if (evt.IsRuntimeSpecialName)
 				service.SetCanRename(evt, false);
-		}
-	}
+
+            else if (evt.DeclaringType.IsSerializable)
+                service.SetCanRename(evt, false);
+
+        }
+    }
 }
