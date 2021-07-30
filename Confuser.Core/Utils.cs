@@ -23,9 +23,8 @@ namespace Confuser.Core {
 		public static TValue GetValueOrDefault<TKey, TValue>(
 			this Dictionary<TKey, TValue> dictionary,
 			TKey key,
-			TValue defValue = default(TValue)) {
-			TValue ret;
-			if (dictionary.TryGetValue(key, out ret))
+			TValue defValue = default) {
+			if (dictionary.TryGetValue(key, out var ret))
 				return ret;
 			return defValue;
 		}
@@ -43,10 +42,9 @@ namespace Confuser.Core {
 			this Dictionary<TKey, TValue> dictionary,
 			TKey key,
 			Func<TKey, TValue> defValueFactory) {
-			TValue ret;
-			if (dictionary.TryGetValue(key, out ret))
-				return ret;
-			return defValueFactory(key);
+            if (dictionary.TryGetValue(key, out var ret))
+                return ret;
+            return defValueFactory(key);
 		}
 
 		/// <summary>
@@ -61,10 +59,9 @@ namespace Confuser.Core {
 		public static void AddListEntry<TKey, TValue>(this IDictionary<TKey, List<TValue>> self, TKey key, TValue value) {
 			if (key == null)
 				throw new ArgumentNullException("key");
-			List<TValue> list;
-			if (!self.TryGetValue(key, out list))
-				list = self[key] = new List<TValue>();
-			list.Add(value);
+            if (!self.TryGetValue(key, out var list))
+                list = self[key] = new List<TValue>();
+            list.Add(value);
 		}
 
 		/// <summary>
@@ -102,7 +99,7 @@ namespace Confuser.Core {
 		/// <param name="buffer">The input buffer.</param>
 		/// <returns>The SHA1 hash of the input buffer.</returns>
 		public static byte[] SHA1(byte[] buffer) {
-			var sha = new SHA1Managed();
+			using var sha = new SHA1CryptoServiceProvider();
 			return sha.ComputeHash(buffer);
 		}
 
@@ -128,7 +125,7 @@ namespace Confuser.Core {
 		/// <param name="buffer">The input buffer.</param>
 		/// <returns>The SHA256 hash of the input buffer.</returns>
 		public static byte[] SHA256(byte[] buffer) {
-			var sha = new SHA256Managed();
+			using var sha = new SHA256CryptoServiceProvider();
 			return sha.ComputeHash(buffer);
 		}
 
@@ -168,7 +165,7 @@ namespace Confuser.Core {
 		/// <param name="comparison">One of the <see cref="StringComparison" /> values. </param>
 		/// <remarks>Adopted from http://stackoverflow.com/a/244933 </remarks>
 		public static string Replace(this string str, string oldValue, string newValue, StringComparison comparison) {
-			StringBuilder sb = new StringBuilder();
+			StringBuilder sb = new();
 
 			int previousIndex = 0;
 			int index = str.IndexOf(oldValue, comparison);

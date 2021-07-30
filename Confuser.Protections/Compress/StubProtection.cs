@@ -101,7 +101,8 @@ namespace Confuser.Protections.Compress {
 							return;
 
 						// Add File reference
-						byte[] hash = SHA1.Create().ComputeHash(prot.ctx.OriginModule);
+						using var sha = new SHA1CryptoServiceProvider();
+						byte[] hash = sha.ComputeHash(prot.ctx.OriginModule);
 						uint hashBlob = writer.MetaData.BlobHeap.Add(hash);
 
 						MDTable<RawFileRow> fileTbl = writer.MetaData.TablesHeap.FileTable;

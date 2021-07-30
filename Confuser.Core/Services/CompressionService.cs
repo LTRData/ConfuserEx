@@ -10,7 +10,7 @@ using SevenZip.Compression.LZMA;
 
 namespace Confuser.Core.Services {
 	internal class CompressionService : ICompressionService {
-		static readonly object Decompressor = new object();
+		static readonly object Decompressor = new();
 		readonly ConfuserContext context;
 
 		/// <summary>
@@ -40,26 +40,27 @@ namespace Confuser.Core.Services {
 				List<IDnlibDef> members = InjectHelper.Inject(rt.GetRuntimeType("Confuser.Runtime.Lzma"), module.GlobalType, module).ToList();
 				MethodDef decomp = null;
 				foreach (IDnlibDef member in members) {
-					if (member is MethodDef) {
-						var method = (MethodDef)member;
-						if (method.Access == MethodAttributes.Public)
-							method.Access = MethodAttributes.Assembly;
-						if (!method.IsConstructor)
-							method.IsSpecialName = false;
+                    if (member is MethodDef method)
+                    {
+                        if (method.Access == MethodAttributes.Public)
+                            method.Access = MethodAttributes.Assembly;
+                        if (!method.IsConstructor)
+                            method.IsSpecialName = false;
 
-						if (method.Name == "Decompress")
-							decomp = method;
-					}
-					else if (member is FieldDef) {
-						var field = (FieldDef)member;
-						if (field.Access == FieldAttributes.Public)
-							field.Access = FieldAttributes.Assembly;
-						if (field.IsLiteral) {
-							field.DeclaringType.Fields.Remove(field);
-						}
-					}
-				}
-				members.RemoveWhere(def => def is FieldDef && ((FieldDef)def).IsLiteral);
+                        if (method.Name == "Decompress")
+                            decomp = method;
+                    }
+                    else if (member is FieldDef field)
+                    {
+                        if (field.Access == FieldAttributes.Public)
+                            field.Access = FieldAttributes.Assembly;
+                        if (field.IsLiteral)
+                        {
+                            field.DeclaringType.Fields.Remove(field);
+                        }
+                    }
+                }
+				members.RemoveWhere(def => def is FieldDef fielddef && fielddef.IsLiteral);
 
 				Debug.Assert(decomp != null);
 				return Tuple.Create(decomp, members);

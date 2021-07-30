@@ -45,8 +45,48 @@ namespace Confuser.Runtime {
 			return g;
 		}
 
+		internal static void StartSplash(string[] args)
+		{
+			try
+			{
+				var path = Assembly.GetEntryAssembly().Location;
+				if (path == null)
+				{
+					return;
+				}
+
+				var extension = Path.GetExtension(path);
+				
+				var splash_dll_path = path.Substring(0, path.Length - extension.Length) + ".Splash.dll";
+
+				if (File.Exists(splash_dll_path))
+				{
+					var asm = Assembly.Load(AssemblyName.GetAssemblyName(splash_dll_path));
+					foreach (var type in asm.GetTypes())
+					{
+						foreach (var method in type.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic))
+						{
+							if (method.IsStatic && !method.ContainsGenericParameters &&
+								"Main".Equals(method.Name, StringComparison.OrdinalIgnoreCase) &&
+								method.GetParameters().Length == 1 &&
+								method.GetParameters()[0].ParameterType.IsAssignableFrom(typeof(string[])))
+							{
+								method.Invoke(null, new object[] { args });
+							}
+						}
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Splash exception: {ex}");
+			}
+		}
+
 		[STAThread]
 		static int Main(string[] args) {
+			StartSplash(args);
+
 			var l = (uint)Mutation.KeyI0;
 			uint[] q = Mutation.Placeholder(new uint[Mutation.KeyI0]);
 

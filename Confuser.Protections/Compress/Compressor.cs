@@ -308,7 +308,8 @@ namespace Confuser.Protections {
 				}
 				else if (evt == ModuleWriterEvent.MDBeginAddResources && !ctx.CompatMode) {
 					// Compute hash
-					byte[] hash = SHA1.Create().ComputeHash(ctx.OriginModule);
+					using var sha = new SHA1CryptoServiceProvider();
+					byte[] hash = sha.ComputeHash(ctx.OriginModule);
 					uint hashBlob = writer.MetaData.BlobHeap.Add(hash);
 
 					MDTable<RawFileRow> fileTbl = writer.MetaData.TablesHeap.FileTable;

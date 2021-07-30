@@ -10,8 +10,8 @@ namespace Confuser.Renamer {
 
 		public ReversibleRenamer(string password) {
 			cipher = new RijndaelManaged();
-			using (var sha = SHA256.Create())
-				cipher.Key = key = sha.ComputeHash(Encoding.UTF8.GetBytes(password));
+			using var sha = new SHA256CryptoServiceProvider();
+			cipher.Key = key = sha.ComputeHash(Encoding.UTF8.GetBytes(password));
 		}
 
 		static string Base64Encode(byte[] buf) {
