@@ -1,12 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Confuser.Core;
+using Confuser.Core.Services;
 using Confuser.Renamer.Analyzers;
 using dnlib.DotNet;
 using System.Linq;
 
 namespace Confuser.Renamer {
 	internal class AnalyzePhase : ProtectionPhase {
+
 		public AnalyzePhase(NameProtection parent)
 			: base(parent) { }
 
@@ -30,21 +34,25 @@ namespace Confuser.Renamer {
 
 		protected override void Execute(ConfuserContext context, ProtectionParameters parameters) {
 			var service = (NameService)context.Registry.GetService<INameService>();
+
 			context.Logger.Debug("Building VTables & identifier list...");
+
+			foreach (ModuleDef moduleDef in parameters.Targets.OfType<ModuleDef>())
+				moduleDef.EnableTypeDefFindCache = true;
+
 			foreach (IDnlibDef def in parameters.Targets.WithProgress(context.Logger)) {
 				ParseParameters(def, context, service, parameters);
 
-				if (def is ModuleDef) {
-					var module = (ModuleDef)def;
-					foreach (Resource res in module.Resources)
-						service.SetOriginalName(res, res.Name);
+				if (def is ModuleDef module) {
+					foreach (var res in module.Resources)
+						service.AddReservedIdentifier(res.Name);
 				}
-				else
-					service.SetOriginalName(def, def.Name);
+				else {
+					service.StoreNames(def);
+				}
 
-				if (def is TypeDef) {
-					service.GetVTables().GetVTable((TypeDef)def);
-					service.SetOriginalNamespace(def, ((TypeDef)def).Namespace);
+				if (def is TypeDef typeDef) {
+					service.GetVTables().GetVTable(typeDef);
 				}
 				context.CheckCancellation();
 			}
@@ -56,18 +64,25 @@ namespace Confuser.Renamer {
 				Analyze(service, context, parameters, def, true);
 				context.CheckCancellation();
 			}
+
+			foreach (ModuleDef moduleDef in parameters.Targets.OfType<ModuleDef>()) {
+				moduleDef.EnableTypeDefFindCache = false;
+				moduleDef.ResetTypeDefFindCache();
+			}
 		}
 
 		void RegisterRenamers(ConfuserContext context, NameService service) {
-			bool wpf = false,
-			     caliburn = false,
-			     winforms = false,
-			     json = false;
+			bool wpf = false;
+			bool caliburn = false;
+			bool winforms = false;
+			bool json = false;
+			bool visualBasic = false;
+			bool vsComposition = false;
 
-			foreach (var module in context.Modules)
+			foreach (var module in context.Modules) {
 				foreach (var asmRef in module.GetAssemblyRefs()) {
 					if (asmRef.Name == "WindowsBase" || asmRef.Name == "PresentationCore" ||
-					    asmRef.Name == "PresentationFramework" || asmRef.Name == "System.Xaml") {
+						asmRef.Name == "PresentationFramework" || asmRef.Name == "System.Xaml") {
 						wpf = true;
 					}
 					else if (asmRef.Name == "Caliburn.Micro") {
@@ -79,7 +94,16 @@ namespace Confuser.Renamer {
 					else if (asmRef.Name == "Newtonsoft.Json") {
 						json = true;
 					}
+					else if (asmRef.Name == "Microsoft.VisualStudio.Composition") {
+						vsComposition = true;
+					}
 				}
+
+				var vbEmbeddedAttribute = module.FindNormal("Microsoft.VisualBasic.Embedded");
+				if (vbEmbeddedAttribute != null && vbEmbeddedAttribute.BaseType.FullName.Equals("System.Attribute")) {
+					visualBasic = true;
+				}
+			}
 
 			if (wpf) {
 				var wpfAnalyzer = new WPFAnalyzer();
@@ -102,6 +126,18 @@ namespace Confuser.Renamer {
 				context.Logger.Debug("Newtonsoft.Json found, enabling compatibility.");
 				service.Renamers.Add(jsonAnalyzer);
 			}
+
+			if (visualBasic) {
+				var vbAnalyzer = new VisualBasicRuntimeAnalyzer();
+				context.Logger.Debug("Visual Basic Embedded Runtime found, enabling compatibility.");
+				service.Renamers.Add(vbAnalyzer);
+			}
+
+			if (vsComposition) {
+				var analyzer = new VsCompositionAnalyzer();
+				context.Logger.Debug("Visual Studio Composition found, enabling compatibility.");
+				service.Renamers.Add(analyzer);
+			}
 		}
 
 		internal void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, IDnlibDef def, bool runAnalyzer) {
@@ -116,13 +152,20 @@ namespace Confuser.Renamer {
 			else if (def is EventDef)
 				Analyze(service, context, parameters, (EventDef)def);
 			else if (def is ModuleDef) {
-				var pass = parameters.GetParameter<string>(context, def, "password", null);
-				if (pass != null)
-					service.reversibleRenamer = new ReversibleRenamer(pass);
-
-				var idOffset = parameters.GetParameter<uint>(context, def, "idOffset", 0);
-				if (idOffset != 0)
-					service.SetNameId(idOffset);
+				var renamingMode = parameters.GetParameter<RenameMode>(context, def, "mode");
+				if (renamingMode == RenameMode.Reversible && service.reversibleRenamer == null) {
+					var generatePassword = parameters.GetParameter<bool>(context, def, "generatePassword");
+					var password = parameters.GetParameter<string>(context, def, "password");
+					if (generatePassword || password == null) {
+						password = context.Registry.GetService<IRandomService>().SeedString;
+					}
+					string dir = context.OutputDirectory;
+					string path = Path.GetFullPath(Path.Combine(dir, CoreComponent.PasswordFileName));
+					if (!Directory.Exists(dir))
+						Directory.CreateDirectory(dir);
+					File.WriteAllText(path, password);
+					service.reversibleRenamer = new ReversibleRenamer(password);
+				}
 
 				service.SetCanRename(def, false);
 			}
@@ -186,14 +229,17 @@ namespace Confuser.Renamer {
 
 		void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, MethodDef method) {
 			if (IsVisibleOutside(context, parameters, method.DeclaringType) &&
-			    (method.IsFamily || method.IsFamilyOrAssembly || method.IsPublic) &&
-			    IsVisibleOutside(context, parameters, method))
+				(method.IsFamily || method.IsFamilyOrAssembly || method.IsPublic) &&
+				IsVisibleOutside(context, parameters, method))
 				service.SetCanRename(method, false);
 
 			else if (method.IsRuntimeSpecialName)
 				service.SetCanRename(method, false);
 
-            else if (parameters.GetParameter(context, method, "forceRen", false))
+			else if (method.IsExplicitlyImplementedInterfaceMember())
+				service.SetCanRename(method, false);
+
+			else if (parameters.GetParameter(context, method, "forceRen", false))
 				return;
 
             else if (method.DeclaringType.IsComImport() && !method.HasAttribute("System.Runtime.InteropServices.DispIdAttribute"))
@@ -205,8 +251,8 @@ namespace Confuser.Renamer {
 
 		void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, FieldDef field) {
 			if (IsVisibleOutside(context, parameters, field.DeclaringType) &&
-			    (field.IsFamily || field.IsFamilyOrAssembly || field.IsPublic) &&
-			    IsVisibleOutside(context, parameters, field))
+				(field.IsFamily || field.IsFamilyOrAssembly || field.IsPublic) &&
+				IsVisibleOutside(context, parameters, field))
 				service.SetCanRename(field, false);
 
 			else if (field.IsRuntimeSpecialName)
@@ -228,7 +274,8 @@ namespace Confuser.Renamer {
 
 		void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, PropertyDef property) {
 			if (IsVisibleOutside(context, parameters, property.DeclaringType) &&
-			    IsVisibleOutside(context, parameters, property))
+			    (property.IsFamily() || property.IsFamilyOrAssembly() || property.IsPublic()) &&
+				IsVisibleOutside(context, parameters, property))
 				service.SetCanRename(property, false);
 
 			else if (property.IsRuntimeSpecialName)
@@ -252,7 +299,8 @@ namespace Confuser.Renamer {
 
 		void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, EventDef evt) {
 			if (IsVisibleOutside(context, parameters, evt.DeclaringType) &&
-			    IsVisibleOutside(context, parameters, evt))
+			    (evt.IsFamily() || evt.IsFamilyOrAssembly() || evt.IsPublic()) &&
+				IsVisibleOutside(context, parameters, evt))
 				service.SetCanRename(evt, false);
 
 			else if (evt.IsRuntimeSpecialName)
