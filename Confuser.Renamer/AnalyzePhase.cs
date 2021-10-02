@@ -6,7 +6,6 @@ using Confuser.Core;
 using Confuser.Core.Services;
 using Confuser.Renamer.Analyzers;
 using dnlib.DotNet;
-using System.Linq;
 
 namespace Confuser.Renamer {
 	internal class AnalyzePhase : ProtectionPhase {

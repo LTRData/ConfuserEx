@@ -326,7 +326,7 @@ namespace Confuser.Protections {
 					// Compute hash
 					using var sha = new SHA1CryptoServiceProvider();
 					byte[] hash = sha.ComputeHash(ctx.OriginModule);
-					uint hashBlob = writer.MetaData.BlobHeap.Add(hash);
+					uint hashBlob = writer.Metadata.BlobHeap.Add(hash);
 
 					MDTable<RawFileRow> fileTbl = writer.Metadata.TablesHeap.FileTable;
 					uint fileRid = fileTbl.Add(new RawFileRow(
